@@ -1,0 +1,21 @@
+<canvas layoutsubtree>
+    <button>Toggle</button>
+</canvas>
+
+<script>
+    const canvas    = document.querySelector('canvas');
+    const button    = canvas.querySelector('button');
+    const ctx       = canvas.getContext('2d');
+
+    canvas.width    = canvas.height = 600;
+
+    // fires when children change
+    canvas.onpaint  = () => {
+        
+        // clear canvas
+        ctx.reset();
+
+        // draw DOM element to the canvas
+        ctx.drawElementImage(button, 200, 250);
+    }
+</script>
