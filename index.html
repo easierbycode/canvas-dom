@@ -65,11 +65,14 @@
     /* The REAL, interactive button — styled like a CMG dashboard tile.
        Idle = brand green; toggled-ON = the dashboard's "selected" yellow.
        The glitch shader picks up whichever state the texture is in. */
-    canvas > button {
+    canvas button {
         box-sizing: border-box;
-        display: block;             /* normal flow — reliably honored in layoutsubtree */
-        width: 60%;                 /* 60% x 40% of a 2:1 canvas -> 3:1 button */
-        height: 40%;
+        display: block;
+        /* The layoutsubtree engine doesn't resolve % sizes against the canvas
+           (they collapse to 0), so size in vw/px — ~60% x 40%, 3:1 ratio. */
+        width:  min(264px, 54vw);
+        height: min(88px, 18vw);
+        margin: 0;               /* centering is measured & applied by centerButton() */
         border: 1px solid var(--tile-edge);
         border-radius: clamp(8px, 1.6vmin, 14px);
         cursor: pointer;
@@ -87,7 +90,7 @@
             0 0 30px rgba(120, 255, 90, .45);
         transition: background .2s, box-shadow .2s, color .2s, border-color .2s, transform .06s;
     }
-    canvas > button:hover {
+    canvas button:hover {
         background: linear-gradient(180deg, #d4ff8a 0%, #5fe87f 55%, #25a94c 100%);
         box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, .6),
@@ -95,9 +98,9 @@
             0 0 0 1px rgba(180, 255, 140, .6),
             0 0 42px rgba(120, 255, 90, .65);
     }
-    canvas > button:active { transform: translateY(1px); }
+    canvas button:active { transform: translateY(1px); }
     /* toggled-ON — the CMG "selected" yellow (matches .item.sel .bar) */
-    canvas > button.on {
+    canvas button.on {
         color: #0a0a06;
         border-color: #fff36a;
         background: linear-gradient(180deg, #fffea1 0%, var(--yellow) 28%, #d8e640 65%, #a4b00b 100%);
@@ -386,21 +389,22 @@ function resize(){
     const dpr = Math.min(devicePixelRatio || 1, 2);
     canvas.width  = Math.round(canvas.clientWidth  * dpr);
     canvas.height = Math.round(canvas.clientHeight * dpr);
-    if (LIVE) centerButton();    // responsive centering for the real DOM button
+    if (LIVE) centerButton();    // measure & center the real DOM button
     else drawFallback();         // fallback bitmap tracks the (responsive) canvas size
 }
 
-// Center the real button inside the canvas using normal-flow margins — the one
-// layout mechanism the experimental layoutsubtree reliably honors (abspos and
-// flex/grid centering of canvas children are unreliable today). Recomputed on
-// every resize so it stays centered at any size.
+// The layoutsubtree engine pins a direct canvas child to the content-box origin,
+// and of all the usual centering tricks ONLY `transform` actually moves it
+// (verified in flagged Chrome: margins/abspos/relpos/flex/grid all leave it at
+// the top-left; transform → dead-center). So measure the laid-out offset and
+// translate the button to center. Re-run on resize → stays centered responsively.
 function centerButton(){
-    button.style.margin = '0';
-    const cw = canvas.clientWidth, ch = canvas.clientHeight;
-    const bw = button.offsetWidth  || cw * 0.6;
-    const bh = button.offsetHeight || ch * 0.4;
-    button.style.marginLeft = Math.max(0, (cw - bw) / 2) + 'px';
-    button.style.marginTop  = Math.max(0, (ch - bh) / 2) + 'px';
+    if (!LIVE) return;
+    button.style.transform = 'none';                 // measure the natural (top-left) position
+    const cr = canvas.getBoundingClientRect(), br = button.getBoundingClientRect();
+    const dx = (cr.width  - br.width)  / 2 - (br.left - cr.left);
+    const dy = (cr.height - br.height) / 2 - (br.top  - cr.top);
+    button.style.transform = `translate(${dx}px, ${dy}px)`;
 }
 
 /* --------------------------------------------------------- interaction state */
@@ -481,10 +485,11 @@ if (gl) {
     initGL();
     resize();
     addEventListener('resize', resize);
-    // Redraw the fallback once the Orbitron webfont loads so the label is crisp.
+    // Re-center / redraw once the Orbitron webfont loads (and after layout settles).
     if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(() => { if (!LIVE) drawFallback(); });
+        document.fonts.ready.then(() => { LIVE ? centerButton() : drawFallback(); });
     }
+    if (LIVE) { requestAnimationFrame(centerButton); setTimeout(centerButton, 250); }
     requestAnimationFrame(frame);
 }
 </script>
