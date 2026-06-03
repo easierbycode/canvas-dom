@@ -1,9 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glitch Button · HTML-in-Canvas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+    :root {
+        color-scheme: dark;
+        /* CMG dashboard palette — static/dashboard.css */
+        --green: #9CFF6B;
+        --green-glow: #7CFF4F;
+        --green-deep: #0e6a2b;
+        --yellow: #F6FF4A;
+        --tile-edge: rgba(140, 255, 110, .55);
+    }
+    html, body {
+        height: 100%;
+        margin: 0;
+        /* CMG body: green core glow on black */
+        background:
+            radial-gradient(ellipse 80% 60% at 50% 42%, rgba(20, 90, 40, .45), transparent 70%),
+            radial-gradient(ellipse 60% 70% at 50% 50%, rgba(8, 40, 18, .85), #000 80%),
+            #000;
+        color: var(--green);
+        font-family: 'Share Tech Mono', ui-monospace, Menlo, Consolas, monospace;
+        -webkit-font-smoothing: antialiased;
+    }
+    body {
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: clamp(14px, 3vmin, 24px);
+        text-align: center;
+        padding: 5vmin;
+        box-sizing: border-box;
+        /* CMG green scanline texture */
+        background-image: repeating-linear-gradient(
+            0deg, rgba(0, 255, 120, .035) 0 1px, transparent 1px 3px);
+    }
+    h1 {
+        margin: 0;
+        font-size: clamp(12px, 1.7vmin, 15px);
+        letter-spacing: .35em;
+        text-transform: uppercase;
+        color: rgba(220, 255, 180, .85);
+        font-weight: 600;
+        text-shadow: 0 0 18px rgba(120, 255, 90, .45);
+    }
+    .sub { margin: 0; color: rgba(180, 255, 140, .6); font-size: clamp(11px, 1.3vmin, 13px); }
+    .sub b { color: var(--green); font-weight: 600; }
+
+    /* The canvas lays out its DOM child (layoutsubtree) but WE paint it.
+       grid + place-items centers the button responsively at ANY canvas size,
+       using normal flow (no abs-pos / fixed margins). */
+    canvas {
+        width: min(440px, 90vw);
+        height: min(220px, 45vw);   /* 2:1 */
+        display: block;
+    }
+
+    /* The REAL, interactive button — styled like a CMG dashboard tile.
+       Idle = brand green; toggled-ON = the dashboard's "selected" yellow.
+       The glitch shader picks up whichever state the texture is in. */
+    canvas > button {
+        box-sizing: border-box;
+        display: block;             /* normal flow — reliably honored in layoutsubtree */
+        width: 60%;                 /* 60% x 40% of a 2:1 canvas -> 3:1 button */
+        height: 40%;
+        border: 1px solid var(--tile-edge);
+        border-radius: clamp(8px, 1.6vmin, 14px);
+        cursor: pointer;
+        font-family: 'Orbitron', ui-sans-serif, system-ui, sans-serif;
+        font-weight: 800;
+        font-size: clamp(15px, 4vmin, 30px);
+        letter-spacing: .18em;
+        text-transform: uppercase;
+        color: #052b12;
+        background: linear-gradient(180deg, #b6ff80 0%, #3ed26c 55%, #1c8a3e 100%);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .5),
+            inset 0 -3px 0 rgba(0, 0, 0, .28),
+            0 0 0 1px rgba(140, 255, 110, .35),
+            0 0 30px rgba(120, 255, 90, .45);
+        transition: background .2s, box-shadow .2s, color .2s, border-color .2s, transform .06s;
+    }
+    canvas > button:hover {
+        background: linear-gradient(180deg, #d4ff8a 0%, #5fe87f 55%, #25a94c 100%);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, .6),
+            inset 0 -3px 0 rgba(0, 0, 0, .28),
+            0 0 0 1px rgba(180, 255, 140, .6),
+            0 0 42px rgba(120, 255, 90, .65);
+    }
+    canvas > button:active { transform: translateY(1px); }
+    /* toggled-ON — the CMG "selected" yellow (matches .item.sel .bar) */
+    canvas > button.on {
+        color: #0a0a06;
+        border-color: #fff36a;
+        background: linear-gradient(180deg, #fffea1 0%, var(--yellow) 28%, #d8e640 65%, #a4b00b 100%);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 220, .7),
+            inset 0 -3px 0 rgba(150, 140, 0, .4),
+            0 0 0 1px rgba(255, 243, 106, .6),
+            0 0 44px rgba(255, 240, 90, .55);
+    }
+
+    .hint { color: rgba(160, 255, 110, .5); font-size: clamp(10px, 1.2vmin, 12px); max-width: 440px; text-transform: uppercase; letter-spacing: .12em; }
+    #banner {
+        display: none;
+        max-width: 440px;
+        padding: 9px 12px;
+        border: 1px solid #4a3a12;
+        background: #1c1606;
+        color: #d8b25a;
+        border-radius: 6px;
+        font-size: 11.5px;
+        text-align: left;
+    }
+    #banner code { color: #ffd479; }
+    #banner.show { display: block; }
+</style>
+</head>
+<body>
+
+<h1>Glitch Button</h1>
+<p class="sub">a live <b>&lt;button&gt;</b> rendered through a WebGL glitch shader — still clickable</p>
+
+<!-- layoutsubtree opts the canvas children into the HTML-in-Canvas pipeline:
+     they get real layout + interactivity, but we draw them ourselves. -->
 <canvas layoutsubtree>
     <button>Toggle</button>
 </canvas>
 
+<div id="banner"></div>
+<p class="hint">Hover to charge it · click to toggle &amp; trigger a burst</p>
+
 <script>
-    const canvas    = document.querySelector('canvas');
-    const button    = canvas.querySelector('button');
-    const gl        = canvas.getContext('webgl2', { alpha: true });
+const canvas = document.querySelector('canvas');
+const button = canvas.querySelector('button');
+const banner = document.getElementById('banner');
+const gl     = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: false });
+
+// Is the experimental HTML-in-Canvas WebGL upload available?
+// (Chrome/Brave 147+ behind chrome://flags/#canvas-draw-element)
+const LIVE = !!(gl && typeof gl.texElementImage2D === 'function');
+
+if (!gl) {
+    banner.classList.add('show');
+    banner.innerHTML = 'This browser has no <b>WebGL2</b>, so the glitch shader can’t run.';
+}
+
+/* ------------------------------------------------------------------ shaders */
+const VERT = `#version 300 es
+layout(location=0) in vec2 aPos;   // clip space
+layout(location=1) in vec2 aUV;    // [0,1] across the padded quad (v=0 top)
+out vec2 vUV;
+void main(){ vUV = aUV; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const FRAG = `#version 300 es
+precision highp float;
+in  vec2 vUV;
+out vec4 frag;
+
+uniform sampler2D uTex;
+uniform float uTime;
+uniform float uHover;     // 0..1 eased
+uniform float uBurst;     // 0..1 decaying click impulse
+uniform vec2  uPadFrac;   // padding as a fraction of the padded quad, per axis
+
+float hash(float n){ return fract(sin(n) * 43758.5453123); }
+float hash2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+
+// Sample the button; anything outside its box reads as transparent so the
+// torn / displaced slices show clean ragged edges instead of smeared pixels.
+vec4 btn(vec2 uv){
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);
+    return texture(uTex, uv);
+}
+
+void main(){
+    // padded-quad uv -> button uv (button occupies the inner region)
+    vec2 buv = (vUV - uPadFrac) / (1.0 - 2.0 * uPadFrac);
+    float t  = uTime;
+
+    // overall energy: always a little alive, more on hover, spikes on click
+    float amp = 0.045 + 0.20 * uHover + 0.95 * uBurst;
+
+    // --- horizontal slice / block displacement -------------------------
+    float slices = 19.0;
+    float line   = floor(buv.y * slices);
+    float pick   = hash(line + floor(t * 11.0));          // which slices tear
+    float jit    = hash(line * 1.7 + floor(t * 34.0));    // fast per-line jitter
+    float tear   = step(0.80 - 0.45 * amp, pick);         // more tears as amp rises
+    float disp   = (jit - 0.5) * tear * amp * 1.5;
+    // rare violent tear while bursting
+    disp += (hash(line + floor(t * 6.0)) - 0.5)
+            * step(0.6, uBurst) * step(0.93, pick) * 0.28;
+    vec2 g = buv + vec2(disp, 0.0);
+
+    // --- RGB channel split --------------------------------------------
+    float split = amp * 0.5 + 0.004
+                + (hash2(vec2(line, floor(t * 40.0))) - 0.5) * amp * 0.6;
+    vec4 cr = btn(g + vec2( split, 0.0));
+    vec4 cg = btn(g);
+    vec4 cb = btn(g - vec2( split, 0.0));
+    vec3 col = vec3(cr.r, cg.g, cb.b);
+    float a  = max(cr.a, max(cg.a, cb.a));
+
+    // --- moving scanlines ---------------------------------------------
+    col *= 0.90 + 0.10 * sin(vUV.y * 230.0 - t * 9.0);
+
+    // --- noise grain inside active slices + on burst -------------------
+    float n = hash2(vUV * vec2(140.0, 70.0) + t);
+    col += (n - 0.5) * (0.12 * tear + 0.30 * uBurst) * a;
+
+    // --- global brightness flicker ------------------------------------
+    col *= 1.0 + (hash(floor(t * 22.0)) - 0.5) * 0.14 * (uHover + uBurst);
+
+    // slight chroma push while bursting
+    col = mix(col, col * vec3(1.12, 1.0, 1.22), uBurst * 0.5);
+
+    frag = vec4(col, a);   // straight alpha (canvas is premultipliedAlpha:false)
+}`;
+
+/* ------------------------------------------------------------- gl plumbing */
+let prog, vbo, vao, tex, u = {}, haveTex = false;
+
+function compile(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+        throw new Error(gl.getShaderInfoLog(s));
+    return s;
+}
+
+function initGL(){
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS))
+        throw new Error(gl.getProgramInfoLog(prog));
+
+    u.tex   = gl.getUniformLocation(prog, 'uTex');
+    u.time  = gl.getUniformLocation(prog, 'uTime');
+    u.hover = gl.getUniformLocation(prog, 'uHover');
+    u.burst = gl.getUniformLocation(prog, 'uBurst');
+    u.pad   = gl.getUniformLocation(prog, 'uPadFrac');
+
+    vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    vbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 16, 0);  // pos
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 16, 8);  // uv
+    gl.bindVertexArray(null);
+
+    tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+
+/* ---------------------------------------------------- texture source: LIVE */
+// Capture the live DOM button into the texture. Spec usage is inside onpaint,
+// but we also try it per-frame so hover/active/toggle states stay current; if
+// that ever throws we quietly fall back to onpaint-only capture.
+let rafCaptureOK = true;
+function captureLive(fromPaint){
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);  // top-left source; flip to true if the live button renders upside-down
+    try {
+        // Chrome origin-trial signature (mirrors texImage2D's argument order).
+        gl.texElementImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA,
+                             gl.UNSIGNED_BYTE, button);
+        haveTex = true;
+    } catch (e1) {
+        try {
+            // WICG IDL signature: (target, internalformat, element).
+            gl.texElementImage2D(gl.TEXTURE_2D, gl.RGBA, button);
+            haveTex = true;
+        } catch (e2) {
+            if (!fromPaint) rafCaptureOK = false;   // capture disallowed outside onpaint
+        }
+    }
+}
+
+/* ------------------------------------------------ texture source: FALLBACK */
+// No experimental API? Draw a CMG-styled button bitmap so the shader still
+// demos. Mirrors the CSS: green idle / brighter-green hover / yellow when ON.
+const off  = document.createElement('canvas');
+const octx = off.getContext('2d');
+function drawFallback(){
+    if (!gl) return;
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const r = buttonRectCss();                     // responsive box (from canvas size)
+    const W = Math.max(2, Math.round(r.w)), H = Math.max(2, Math.round(r.h));
+    off.width = W * dpr; off.height = H * dpr;
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    octx.clearRect(0, 0, W, H);
+
+    const on = button.classList.contains('on');
+    const hot = hoverTarget > 0.5;
+    const g = octx.createLinearGradient(0, 0, 0, H);
+    if (on) {                       // CMG "selected" yellow
+        g.addColorStop(0, '#fffea1'); g.addColorStop(.28, '#F6FF4A');
+        g.addColorStop(.65, '#d8e640'); g.addColorStop(1, '#a4b00b');
+    } else if (hot) {               // brighter green (hover)
+        g.addColorStop(0, '#d4ff8a'); g.addColorStop(.55, '#5fe87f'); g.addColorStop(1, '#25a94c');
+    } else {                        // CMG brand green (idle)
+        g.addColorStop(0, '#b6ff80'); g.addColorStop(.55, '#3ed26c'); g.addColorStop(1, '#1c8a3e');
+    }
+
+    const rad = Math.min(W, H) * 0.16;
+    octx.beginPath();
+    octx.moveTo(rad, 0);
+    octx.arcTo(W, 0, W, H, rad); octx.arcTo(W, H, 0, H, rad);
+    octx.arcTo(0, H, 0, 0, rad); octx.arcTo(0, 0, W, 0, rad);
+    octx.closePath();
+    octx.fillStyle = g; octx.fill();
+    octx.lineWidth = Math.max(1, H * 0.022);
+    octx.strokeStyle = on ? '#fff36a' : 'rgba(180, 255, 140, .85)';
+    octx.stroke();
+    // top inner highlight
+    octx.fillStyle = 'rgba(255, 255, 255, .5)';
+    octx.fillRect(rad, 1, W - 2 * rad, 1);
+
+    octx.fillStyle = on ? '#0a0a06' : '#052b12';
+    const fs = Math.round(H * 0.30);
+    octx.font = `800 ${fs}px 'Orbitron', ui-sans-serif, system-ui, sans-serif`;
+    octx.textAlign = 'center'; octx.textBaseline = 'middle';
+    try { octx.letterSpacing = Math.round(fs * 0.16) + 'px'; } catch (e) {}
+    octx.fillText('TOGGLE', W / 2, H / 2 + 1);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // sources are top-left; uv v=0 is quad top
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, off);
+    haveTex = true;
+}
+
+/* ----------------------------------------------------- geometry from layout */
+const PAD = 28;                 // css px of bleed room around the button
+let padFracX = 0.1, padFracY = 0.1;
+
+function buttonRectCss(){
+    const c = canvas.getBoundingClientRect();
+    if (LIVE) {                 // real laid-out element
+        const b = button.getBoundingClientRect();
+        return { x: b.left - c.left, y: b.top - c.top, w: b.width, h: b.height };
+    }
+    const w = c.width * 0.60, h = c.height * 0.40;   // mirror the CSS button box (responsive)
+    return { x: (c.width - w) / 2, y: (c.height - h) / 2, w, h };
+}
+
+function updateQuad(){
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    const r  = buttonRectCss();
+    const qx = r.x - PAD, qy = r.y - PAD, qw = r.w + 2 * PAD, qh = r.h + 2 * PAD;
+    padFracX = PAD / qw; padFracY = PAD / qh;
+
+    const x0 = qx / cw * 2 - 1, x1 = (qx + qw) / cw * 2 - 1;
+    const y0 = 1 - qy / ch * 2, y1 = 1 - (qy + qh) / ch * 2;  // y0 top, y1 bottom
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        x0, y0, 0, 0,
+        x0, y1, 0, 1,
+        x1, y0, 1, 0,
+        x1, y0, 1, 0,
+        x0, y1, 0, 1,
+        x1, y1, 1, 1,
+    ]), gl.DYNAMIC_DRAW);
+}
+
+function resize(){
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    canvas.width  = Math.round(canvas.clientWidth  * dpr);
+    canvas.height = Math.round(canvas.clientHeight * dpr);
+    if (LIVE) centerButton();    // responsive centering for the real DOM button
+    else drawFallback();         // fallback bitmap tracks the (responsive) canvas size
+}
+
+// Center the real button inside the canvas using normal-flow margins — the one
+// layout mechanism the experimental layoutsubtree reliably honors (abspos and
+// flex/grid centering of canvas children are unreliable today). Recomputed on
+// every resize so it stays centered at any size.
+function centerButton(){
+    button.style.margin = '0';
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    const bw = button.offsetWidth  || cw * 0.6;
+    const bh = button.offsetHeight || ch * 0.4;
+    button.style.marginLeft = Math.max(0, (cw - bw) / 2) + 'px';
+    button.style.marginTop  = Math.max(0, (ch - bh) / 2) + 'px';
+}
+
+/* --------------------------------------------------------- interaction state */
+let hoverTarget = 0, hover = 0, burst = 0, state = false;
+
+function toggle(){
+    state = !state;
+    button.classList.toggle('on', state);
+    burst = 1;
+    if (!LIVE) drawFallback();   // refresh the fallback bitmap on change
+}
+
+if (LIVE) {
+    // The real button receives the events — distorted on screen, fully live.
+    button.addEventListener('pointerenter', () => hoverTarget = 1);
+    button.addEventListener('pointerleave', () => hoverTarget = 0);
+    button.addEventListener('click', toggle);
+    canvas.onpaint = () => captureLive(true);   // recapture when the DOM repaints
+} else {
+    // Fallback: hit-test the quad on the canvas itself.
+    const hit = e => {
+        const c = canvas.getBoundingClientRect(), r = buttonRectCss();
+        const x = e.clientX - c.left, y = e.clientY - c.top;
+        return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+    };
+    canvas.addEventListener('pointermove', e => {
+        const over = hit(e);
+        canvas.style.cursor = over ? 'pointer' : 'default';
+        const want = over ? 1 : 0;
+        if (want !== hoverTarget) { hoverTarget = want; drawFallback(); }
+    });
+    canvas.addEventListener('pointerleave', () => {
+        hoverTarget = 0; drawFallback();
+    });
+    canvas.addEventListener('click', e => { if (hit(e)) toggle(); });
+
+    banner.classList.add('show');
+    banner.innerHTML =
+        '⚠ Live HTML-in-Canvas not detected — showing the glitch shader on a ' +
+        'fallback bitmap. For the <b>real</b> live, clickable DOM button, open in ' +
+        'Chrome/Brave 147+ with <code>chrome://flags/#canvas-draw-element</code> enabled.';
+}
+
+/* ----------------------------------------------------------------- the loop */
+function frame(now){
+    const t = now / 1000;
+    hover += (hoverTarget - hover) * 0.15;     // ease hover
+    burst *= 0.90;                              // decay click impulse
+    if (burst < 0.001) burst = 0;
+
+    if (LIVE && rafCaptureOK) captureLive(false);
+    updateQuad();
+
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    if (haveTex) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.useProgram(prog);
+        gl.bindVertexArray(vao);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.uniform1i(u.tex, 0);
+        gl.uniform1f(u.time, t);
+        gl.uniform1f(u.hover, hover);
+        gl.uniform1f(u.burst, burst);
+        gl.uniform2f(u.pad, padFracX, padFracY);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.bindVertexArray(null);
+    }
+    requestAnimationFrame(frame);
+}
+
+/* --------------------------------------------------------------- bootstrap */
+if (gl) {
+    initGL();
+    resize();
+    addEventListener('resize', resize);
+    // Redraw the fallback once the Orbitron webfont loads so the label is crisp.
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(() => { if (!LIVE) drawFallback(); });
+    }
+    requestAnimationFrame(frame);
+}
 </script>
+</body>
+</html>
