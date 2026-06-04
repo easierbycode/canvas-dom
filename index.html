@@ -389,22 +389,26 @@ function resize(){
     const dpr = Math.min(devicePixelRatio || 1, 2);
     canvas.width  = Math.round(canvas.clientWidth  * dpr);
     canvas.height = Math.round(canvas.clientHeight * dpr);
-    if (LIVE) centerButton();    // measure & center the real DOM button
-    else drawFallback();         // fallback bitmap tracks the (responsive) canvas size
+    if (!LIVE) drawFallback();   // fallback bitmap tracks the (responsive) canvas size
+    // (LIVE centering self-corrects every frame in frame())
 }
 
-// The layoutsubtree engine pins a direct canvas child to the content-box origin,
-// and of all the usual centering tricks ONLY `transform` actually moves it
-// (verified in flagged Chrome: margins/abspos/relpos/flex/grid all leave it at
-// the top-left; transform → dead-center). So measure the laid-out offset and
-// translate the button to center. Re-run on resize → stays centered responsively.
+// Center the real button. The subtree pins it to the content-box top-left and
+// ONLY `transform` moves it (verified in flagged Chrome). A one-shot at load is
+// unreliable — the subtree lays the button out asynchronously — so we
+// self-correct every frame: fold the button-center → canvas-center delta into an
+// accumulated translate. Idempotent (once centered the delta is ~0, so it just
+// reads two rects and returns), and it keeps the button centered through resizes
+// and state changes for free.
+let tx = 0, ty = 0;
 function centerButton(){
-    if (!LIVE) return;
-    button.style.transform = 'none';                 // measure the natural (top-left) position
     const cr = canvas.getBoundingClientRect(), br = button.getBoundingClientRect();
-    const dx = (cr.width  - br.width)  / 2 - (br.left - cr.left);
-    const dy = (cr.height - br.height) / 2 - (br.top  - cr.top);
-    button.style.transform = `translate(${dx}px, ${dy}px)`;
+    if (!br.width || !br.height) return;                       // not laid out yet
+    const dx = (cr.left + cr.width  / 2) - (br.left + br.width  / 2);
+    const dy = (cr.top  + cr.height / 2) - (br.top  + br.height / 2);
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;      // already centered
+    tx += dx; ty += dy;
+    button.style.transform = `translate(${tx}px, ${ty}px)`;
 }
 
 /* --------------------------------------------------------- interaction state */
@@ -455,7 +459,7 @@ function frame(now){
     burst *= 0.90;                              // decay click impulse
     if (burst < 0.001) burst = 0;
 
-    if (LIVE && rafCaptureOK) captureLive(false);
+    if (LIVE) { centerButton(); if (rafCaptureOK) captureLive(false); }
     updateQuad();
 
     gl.viewport(0, 0, canvas.width, canvas.height);
